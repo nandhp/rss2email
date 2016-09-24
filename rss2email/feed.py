@@ -487,7 +487,7 @@ class Feed (object):
         content = self._get_entry_content(entry)
         try:
             content = self._process_entry_content(
-                entry=entry, content=content, subject=subject)
+                entry=entry, content=content, subject=subject, feed=parsed.feed)
         except _error.ProcessingError as e:
             e.parsed = parsed
             raise
@@ -728,7 +728,7 @@ class Feed (object):
             return contents[0]
         return {'type': 'text/plain', 'value': ''}
 
-    def _process_entry_content(self, entry, content, subject):
+    def _process_entry_content(self, entry, content, subject, feed=None):
         "Convert entry content to the requested format."
         link = self._get_entry_link(entry)
         if self.html_mail:
@@ -749,12 +749,57 @@ class Feed (object):
                     '<div id="entry">',
                     '<h1 class="header"><a href="{}">{}</a></h1>'.format(
                         link, subject),
-                    '<div id="body">',
-                    ])
+            ])
+
+            # Output author (attribution tags) as H2
+            if feed is None:
+                feed = {}
+            attribution = [
+                self._get_entry_link(feed),
+                feed.get('title') or '(Untitled)',
+                entry.get('author_detail', {}).get('href'),
+                entry.get('author', None)
+            ]
+            if not attribution[3]:
+                attribution[3] = feed.get('author', None)
+                attribution[2] = feed.get('author_detail', {}).get('href')
+            if attribution[3]:
+                lines.append(
+                    '<h2 class="attribution">Posted to {} by {}</h2>'.format(
+                        '<a href="{}">{}</a>'.format(attribution[0],
+                                                     attribution[1])
+                        if attribution[0] else attribution[1],
+                        '<a href="{}">{}</a>'.format(attribution[2],
+                                                     attribution[3])
+                        if attribution[2] else attribution[3]
+                    )
+                )
+            else:
+                lines.append(
+                    '<h2 class="attribution">Posted to {}</h2>'.format(
+                        '<a href="{}">{}</a>'.format(attribution[0],
+                                                     attribution[1])
+                        if attribution[0] else attribution[1]
+                    )
+                )
+
+            lines.append('<div id="body">')
             if content['type'] in ('text/html', 'application/xhtml+xml'):
                 lines.append(content['value'].strip())
             else:
                 lines.append(_saxutils.escape(content['value'].strip()))
+
+            if 'media_thumbnail' in entry or 'media_description' in entry:
+                lines.append('<div class="media-group">')
+                thumbnail = entry.get('media_thumbnail', None)
+                if thumbnail and 'url' in thumbnail[0]:
+                    lines.append(('<p><a href="{}">' +
+                                  '<img src="{}" class="media-thumbnail">' +
+                                  '</a></p>').format(link, thumbnail['url']))
+                lines.append(_saxutils.escape(entry.get('media_description',
+                                                        '').strip()))
+                lines.append('</div>')
+
             lines.append('</div>')
             lines.extend([
                     '<div class="footer">'
